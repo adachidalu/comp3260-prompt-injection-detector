@@ -1,0 +1,53 @@
+{
+  "benchmark_version": "1.0.0",
+  "total_cases": 650,
+  "case_types": {
+    "baseline": 150,
+    "injected": 500
+  },
+  "attack_vectors": {
+    "direct_jailbreak": 170,
+    "indirect_data_poisoning": 165,
+    "payload_obfuscation": 165
+  },
+  "per_discipline": {
+    "bioinformatics": {
+      "baseline": 30,
+      "injected": 100
+    },
+    "network_security": {
+      "baseline": 30,
+      "injected": 100
+    },
+    "materials_science": {
+      "baseline": 30,
+      "injected": 100
+    },
+    "quantum_computing": {
+      "baseline": 30,
+      "injected": 100
+    },
+    "climate_modeling": {
+      "baseline": 30,
+      "injected": 100
+    }
+  },
+  "attack_objectives": {
+    "synthetic_secret_disclosure": 165,
+    "task_hijack": 165,
+    "unsupported_certainty": 170
+  },
+  "difficulty_scores": {
+    "0": 150,
+    "1": 15,
+    "2": 105,
+    "3": 250,
+    "4": 110,
+    "5": 20
+  },
+  "unique_user_prompts": 650,
+  "distinct_payload_subtypes": 36,
+  "validation": "passed",
+  "output_file": "scientific_prompt_injection_650.jsonl",
+  "sha256": "5dae8c3dd227591d1b7841fd3ef4f4ddebc3e2bbe3f11a06aa1ca3e9ecca7401"
+}
