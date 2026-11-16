@@ -10,7 +10,7 @@ from .drafting import MockDrafter, OpenAIDrafter
 from .ingest import parse_eml, parse_graph_message
 from .pipeline import process_message
 from .models import ProcessingResult
-from .screening import demo_detector, strict_unconfigured_detector
+from .screening import demo_detector, strict_unconfigured_detector, favour_detector
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -31,7 +31,7 @@ def main():
     p.add_argument('--inbox', type=Path, default=ROOT / 'examples/inbox')
     p.add_argument('--graph-json', type=Path, help='Optional local JSON fixture with Graph message object(s)')
     p.add_argument('--policy', type=Path, default=ROOT / 'examples/mock_policy.txt')
-    p.add_argument('--detector', choices=['strict', 'demo'], default='strict')
+    p.add_argument('--detector', choices=['strict', 'demo', 'favour'], default='strict')
     p.add_argument('--provider', choices=['mock', 'openai'], default='mock')
     p.add_argument('--model', help='OpenAI model identifier; alternatively set OPENAI_MODEL')
     p.add_argument('--db', type=Path, help='Optional SQLite file to record outcomes')
@@ -40,7 +40,12 @@ def main():
 
     policy_text = args.policy.read_text(encoding='utf-8')
     drafter = MockDrafter() if args.provider == 'mock' else OpenAIDrafter(args.model)
-    detector = demo_detector if args.detector == 'demo' else strict_unconfigured_detector
+    if args.detector == 'favour':
+        detector = favour_detector
+    elif args.detector == 'demo':
+        detector = demo_detector
+    else:
+        detector = strict_unconfigured_detector
     messages = []
     intake_failures = []
     if args.inbox.exists():
