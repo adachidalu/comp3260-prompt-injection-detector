@@ -34,7 +34,7 @@ def save_sqlite(path: Path, records: list[dict]):
 
 def main():
     p = argparse.ArgumentParser(description='Synthetic university email processing prototype')
-    p.add_argument('--inbox', type=Path, default=ROOT / 'examples/inbox')
+    p.add_argument('--inbox', type=Path, default=ROOT / 'integration_test')
     p.add_argument('--graph-json', type=Path, help='Optional local JSON fixture with Graph message object(s)')
     p.add_argument('--policy', type=Path, default=ROOT / 'integration_test/mock_policy.txt')
     p.add_argument('--detector', choices=['strict', 'demo', 'none', 'original', 'full', 'favour'], default='full')
