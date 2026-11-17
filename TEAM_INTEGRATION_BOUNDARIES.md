@@ -47,6 +47,30 @@ Comparison adapters are also available:
 The older name `favour_detector` is a temporary compatibility alias only.
 New integration code should use `full_detector`.
 
+
+## Favour-owned validation tools now included
+
+These tools validate the detector without taking over teammate-owned components.
+
+- `run_detector_integration_tests.py` runs real synthetic `.eml` files through
+  intake + `full_detector` and checks PASS / REVIEW / BLOCK behavior.
+- `generate_detector_pilot.py` creates the fixed 26-case DEVELOPMENT pilot:
+  6 genuine, 4 plain attacks, and 16 disguised variants.
+- `detector_replay.py` replays a labelled CSV through `none`, `original`,
+  and `full` detector configurations and exports:
+  - attacks flagged
+  - missed attacks
+  - genuine enquiries held
+  - false-alarm rate
+  - processing failures
+  - screening runtime
+  - results by disguise type and base attack
+
+For the final 650-case replay, this detector tool can consume the correctly
+labelled university-email CSV once the team supplies it. It does not fabricate
+AI drafting cost, reviewer minutes, draft accuracy, action-denial counts, or
+attack-goal success.
+
 ## Chinaza: email intake and AI drafting integration
 
 Existing files such as `ingest.py` and `drafting.py` remain the intake/drafting
