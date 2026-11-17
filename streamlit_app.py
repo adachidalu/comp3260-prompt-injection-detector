@@ -123,11 +123,9 @@ with st.sidebar:
         index=0,
     )
 
-    output_check = st.checkbox(
-        "Enable current output check",
-        value=True,
-        help="Uses the team's current prototype draft-output check.",
-    )
+    # Output checking is mandatory in the protected UI.
+    output_check = True
+    st.caption("Draft-output checks are always enabled in this review interface.")
 
     st.divider()
     st.caption(
@@ -136,10 +134,11 @@ with st.sidebar:
     )
 
 policy_text = st.text_area(
-    "Approved fictional support policy",
+    "Approved fictional support policy (read-only)",
     value=_load_policy(),
     height=150,
-    help="Only synthetic policy text should be used in this prototype.",
+    disabled=True,
+    help="The approved mock policy is loaded from the repository, not the incoming email.",
 )
 
 source_mode = st.radio(
