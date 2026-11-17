@@ -10,7 +10,13 @@ from .drafting import MockDrafter, OpenAIDrafter
 from .ingest import parse_eml, parse_graph_message
 from .pipeline import process_message
 from .models import ProcessingResult
-from .screening import (\n    demo_detector, full_detector, no_screening_detector, original_detector,\n    strict_unconfigured_detector,\n)
+from .screening import (
+    demo_detector,
+    full_detector,
+    no_screening_detector,
+    original_detector,
+    strict_unconfigured_detector,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 
