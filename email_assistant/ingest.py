@@ -11,7 +11,9 @@ import re
 
 from .models import IncomingEmail
 
-_MAX_EML_BYTES = 1024 * 1024  # Prototype limit: fail closed on very large messages
+_MAX_EML_BYTES = 1024 * 1024
+_MAX_PARTS = 20
+_MAX_BODY_CHARS = 60000  # Prototype limit: fail closed on very large messages
 
 
 class _EmailHTMLParser(HTMLParser):
@@ -68,9 +70,8 @@ def _html_text(html: str) -> tuple[str, str]:
 def _part_text(part) -> str:
     try:
         return part.get_content()
-    except (LookupError, UnicodeError, ValueError):
-        raw = part.get_payload(decode=True) or b''
-        return raw.decode('utf-8', errors='replace')
+    except (LookupError, UnicodeError, ValueError) as exc:
+        raise ValueError('Cannot safely decode an email MIME part') from exc
 
 
 def parse_eml(path: Path) -> IncomingEmail:
@@ -80,15 +81,28 @@ def parse_eml(path: Path) -> IncomingEmail:
     if len(data) > _MAX_EML_BYTES:
         raise ValueError(f'Message too large to inspect safely: {path.name}')
     msg = BytesParser(policy=policy.default).parsebytes(data)
+    all_parts = list(msg.walk())
+    if len(all_parts) > _MAX_PARTS or any(part.defects for part in all_parts):
+        raise ValueError('Email has excessive or malformed MIME structure')
+    if not str(msg.get('Subject', '')).strip():
+        raise ValueError('Email subject missing')
+    if not parseaddr(str(msg.get('From', '')))[1]:
+        raise ValueError('Email sender missing')
     parts: list[tuple[str, str]] = []
-    for part in msg.walk():
-        if part.is_multipart() or part.get_content_disposition() == 'attachment':
+    for part in all_parts:
+        if part.is_multipart():
             continue
+        if part.get_content_disposition() == 'attachment' or part.get_filename():
+            raise ValueError('Attachments are outside the prototype scope')
         mime = part.get_content_type().lower()
-        if mime in ('text/plain', 'text/html'):
-            parts.append((mime, _part_text(part)))
-    if not parts:
-        raise ValueError(f'No supported plain-text or HTML body: {path.name}')
+        if mime not in ('text/plain', 'text/html'):
+            raise ValueError(f'Unsupported MIME part: {mime}')
+        body = _part_text(part)
+        if '\ufffd' in body or len(body) > _MAX_BODY_CHARS:
+            raise ValueError('Decoded email body invalid or oversized')
+        parts.append((mime, body))
+    if not parts or len(parts) > 2 or len({mime for mime, _ in parts}) != len(parts):
+        raise ValueError('Missing, duplicated, or ambiguous email body parts')
 
     all_raw = '\n\n'.join(f'[MIME {mime}]\n{body}' for mime, body in parts)
     plain = next((body for mime, body in parts if mime == 'text/plain'), None)
@@ -113,16 +127,27 @@ def parse_eml(path: Path) -> IncomingEmail:
 
 def parse_graph_message(message: dict) -> IncomingEmail:
     """Normalize one *already fetched* Graph message (no API/auth here)."""
-    body = message.get('body') or {}
-    raw = body.get('content')
-    if not isinstance(raw, str):
+    if not isinstance(message, dict):
+        raise ValueError('Graph message must be a dictionary')
+    if message.get('hasAttachments') is True:
+        raise ValueError('Graph attachments are outside the prototype scope')
+    body = message.get('body')
+    if not isinstance(body, dict):
         raise ValueError('Graph message body is missing')
-    mime = 'text/html' if str(body.get('contentType', '')).lower() == 'html' else 'text/plain'
+    raw = body.get('content')
+    typ = str(body.get('contentType', '')).lower()
+    if not isinstance(raw, str) or typ not in ('text', 'html') or len(raw) > _MAX_BODY_CHARS:
+        raise ValueError('Graph body missing, oversized, or unsupported')
+    mime = 'text/html' if typ == 'html' else 'text/plain'
     full, visible = _html_text(raw) if mime == 'text/html' else (raw, raw)
     sender = (((message.get('from') or {}).get('emailAddress') or {}).get('address')) or '(unknown)'
-    source_id = str(message.get('id') or '')
-    if not source_id:
+    source_id = message.get('id')
+    if not isinstance(source_id, str) or not source_id.strip():
         raise ValueError('Graph message id is missing')
+    if not isinstance(message.get('subject'), str) or not message['subject'].strip():
+        raise ValueError('Graph message subject is missing')
+    if not isinstance(sender, str) or sender == '(unknown)':
+        raise ValueError('Graph message sender is missing')
     return IncomingEmail(
         source_id=source_id,
         sender=sender,
