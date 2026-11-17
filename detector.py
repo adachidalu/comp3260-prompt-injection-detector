@@ -354,7 +354,10 @@ def inspect_email(
     if mode not in {"original", "full"}:
         raise ValueError("mode must be 'original' or 'full'")
 
-    original_text = raw_body or inspection_text or visible_text or ""
+    # Plain/direct attacks should be classified from the text visible to the
+    # user. Hidden HTML is inspected separately below so the same hidden
+    # instruction is not double-counted as both "plain" and "hidden_html".
+    original_text = visible_text or ""
     evidence = _scan_text(original_text, form="plain")
 
     if mode == "full":
