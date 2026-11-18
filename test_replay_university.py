@@ -1,4 +1,4 @@
-"""Offline harness checks, not a development set for detector tuning."""
+"""Offline replay tests."""
 import unittest
 
 from email_assistant.drafting import MockDrafter
@@ -14,7 +14,6 @@ class UniversityReplayTests(unittest.TestCase):
         cls.policy = g.read_policy()
 
     def test_replay_all_modes_on_smoke_examples(self):
-        # Harness smoke checks only; no detector rules are adjusted here.
         pilot = [
             {
                 **self.rows[0], "case_id": "PILOT-G",
@@ -64,8 +63,6 @@ class UniversityReplayTests(unittest.TestCase):
             def generate(self, message, policy_text):
                 return "I have sent your email"
 
-        # Deliberately substitute a pass-through test double without touching
-        # the team's detector; phase 3 must distinguish output holds from detection.
         name = "phase3_output_hold_test"
         replay.CONFIGS[name] = (lambda message: ScreeningDecision("pass", "passed", ""), True)
         try:

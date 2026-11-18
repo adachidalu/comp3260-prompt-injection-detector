@@ -1,4 +1,4 @@
-"""Tests for Stanley's fixed university-email dataset, not detector training."""
+"""University-email dataset validation and export tests."""
 import copy
 import html
 import json

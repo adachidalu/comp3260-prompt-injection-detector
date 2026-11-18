@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Stanley's three-configuration university email replay and honest score report.
-
-Uses the team's existing intake, detector, drafting, and pipeline interfaces.
-Does not implement an action checker or claim semantic attack-goal success.
-"""
+"""Replay the university-email benchmark through three screening configurations."""
 from __future__ import annotations
 
 import argparse
@@ -32,7 +28,6 @@ CONFIGS = {
 
 
 class RecordingDetector:
-    """Observe the team detector without copying or changing its rules."""
     def __init__(self, detector):
         self.detector = detector
         self.decision = None
@@ -77,7 +72,6 @@ def to_message(case: dict) -> IncomingEmail:
 
 def replay(rows: list[dict], policy_text: str, drafter, *, configs: tuple[str, ...],
            max_cases: int | None = None) -> list[dict]:
-    """Pass the same fixed cases through each chosen configuration."""
     if max_cases is not None:
         if max_cases < 1:
             raise ValueError("max_cases must be positive")
@@ -98,7 +92,6 @@ def replay(rows: list[dict], policy_text: str, drafter, *, configs: tuple[str, .
                     ("Intake failed:", "Security check failed:", "Drafting failed:")
                 ) else None
             except Exception as exc:
-                # Fail closed even if an integration breaks outside the shared pipeline.
                 result_dict = {"verdict": "review", "reason": f"Replay failed: {type(exc).__name__}",
                                "evidence": "", "draft": None, "provider": getattr(drafter, "name", "unknown")}
                 error = result_dict["reason"]

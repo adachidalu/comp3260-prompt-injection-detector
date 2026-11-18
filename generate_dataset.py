@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Stanley's university-email benchmark: 150 genuine + 100 plain + 400 disguised.
-
-No detector imports, AI calls, real university data, or network access.
-"""
+"""Generate and validate the fictional university-email benchmark."""
 from __future__ import annotations
 
 import argparse
@@ -241,7 +238,6 @@ def generate(seed: int = 650, shuffle: bool = True, policy: dict | None = None) 
         key, subject, question, anchor = topic
         for si, (greeting, signoff, prefix) in enumerate(STYLES):
             cid = f"G{ti * 5 + si + 1:03d}"
-            # Exact subject variation is useful to a human reviewer, not a security cue.
             body = f"{greeting}\n\n{prefix}{question}\n\n{signoff}"
             ctype = "text/html" if si == 4 else "text/plain"
             if ctype == "text/html":
@@ -265,7 +261,6 @@ def generate(seed: int = 650, shuffle: bool = True, policy: dict | None = None) 
             }
             genuine.append(row)
             rows.append(row)
-    # 20 topics × 5 objectives = 100 base attacks. Each gets exactly five forms.
     for ti, topic in enumerate(TOPICS[:20]):
         for gi, kind in enumerate(GOALS):
             number = ti * 5 + gi + 1
@@ -275,8 +270,6 @@ def generate(seed: int = 650, shuffle: bool = True, policy: dict | None = None) 
             payload = attack_text(goal, (ti + gi) % 5)
             for disguise, suffix in zip(DISGUISES, ("P", "H", "B", "Z", "L")):
                 rendered = obfuscate(payload, disguise)
-                # All cases retain an actual student enquiry. Hidden HTML is the
-                # same payload in a hidden region, not a different attack family.
                 clean = f"Hello Student Support,\n\n{base['legitimate_enquiry']}\n\nThank you."
                 if disguise == "hidden_html":
                     body = (f"<p>{html.escape(clean)}</p>"
