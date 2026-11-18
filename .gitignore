@@ -5,3 +5,6 @@ __pycache__/
 *.sqlite
 *.db
 results*.jsonl
+
+# Local Streamlit secrets must never be committed
+.streamlit/secrets.toml
