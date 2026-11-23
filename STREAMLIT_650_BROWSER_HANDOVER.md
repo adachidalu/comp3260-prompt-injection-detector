@@ -22,8 +22,10 @@ Open the Streamlit app and choose:
   as final evaluation results.
 
 The browser displays verdict counts, false-alarm counts, per-disguise
-results and a comparison chart. Download all individual results as JSONL,
-the complete summary as JSON, or a metrics table as CSV.
+results and a comparison chart. The **Source dataset** section also lets
+reviewers download Stanley's original JSONL, CSV and matching fictional policy.
+After a run, download all individual results as JSONL, the complete summary
+as JSON, or a metrics table as CSV.
 
 ## Design decisions and alternatives
 - **Selected: reuse Stanley's JSONL + `replay_university.py`**.
