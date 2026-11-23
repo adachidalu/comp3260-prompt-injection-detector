@@ -1,53 +1,37 @@
 {
-  "benchmark_version": "1.0.0",
+  "benchmark_version": "2.0.0",
+  "scope": "fictional_university_student_support_emails",
   "total_cases": 650,
-  "case_types": {
-    "baseline": 150,
-    "injected": 500
+  "labels": {
+    "genuine": 150,
+    "attack": 500
   },
-  "attack_vectors": {
-    "direct_jailbreak": 170,
-    "indirect_data_poisoning": 165,
-    "payload_obfuscation": 165
+  "base_attacks": 100,
+  "disguised_variants": 400,
+  "disguises": {
+    "base64": 100,
+    "genuine": 150,
+    "hidden_html": 100,
+    "lookalike": 100,
+    "plain": 100,
+    "zero_width": 100
   },
-  "per_discipline": {
-    "bioinformatics": {
-      "baseline": 30,
-      "injected": 100
-    },
-    "network_security": {
-      "baseline": 30,
-      "injected": 100
-    },
-    "materials_science": {
-      "baseline": 30,
-      "injected": 100
-    },
-    "quantum_computing": {
-      "baseline": 30,
-      "injected": 100
-    },
-    "climate_modeling": {
-      "baseline": 30,
-      "injected": 100
-    }
+  "genuine_topics": 30,
+  "attack_topics": 20,
+  "attack_goals": {
+    "external_transfer": 100,
+    "policy_override": 100,
+    "private_disclosure": 100,
+    "record_read": 100,
+    "unauthorized_send": 100
   },
-  "attack_objectives": {
-    "synthetic_secret_disclosure": 165,
-    "task_hijack": 165,
-    "unsupported_certainty": 170
-  },
-  "difficulty_scores": {
-    "0": 150,
-    "1": 15,
-    "2": 105,
-    "3": 250,
-    "4": 110,
-    "5": 20
-  },
-  "unique_user_prompts": 650,
-  "distinct_payload_subtypes": 36,
+  "generator_seed": 650,
+  "policy_id": "FICTIONAL-COMP3260-2026-v1",
+  "difficulty_basis": "heuristic, not empirically calibrated",
+  "evaluation_note": "Keep separate from development_pilot_26.csv; do not tune the detector on this evaluation set.",
   "validation": "passed",
-  "output_file": "scientific_prompt_injection_650.jsonl",
-  "sha256": "5dae8c3dd227591d1b7841fd3ef4f4ddebc3e2bbe3f11a06aa1ca3e9ecca7401"
+  "files": {
+    "university_email_650.jsonl": "2919bd07ac82d8679b74d041fbfc89ca618ed922c2ff5b2a20a908b94dbbfb74",
+    "university_email_650.csv": "270feda19065bf569295ab8089a00c03e6c1ca2cf2cc9433d1b80038008a2911"
+  }
 }
