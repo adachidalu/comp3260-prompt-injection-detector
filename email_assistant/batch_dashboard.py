@@ -14,6 +14,7 @@ import streamlit as st
 
 from email_assistant.batch_runner import DATASET_PATH, load_evaluation, run_batch
 from email_assistant.drafting import MockDrafter, OpenAIDrafter
+from email_assistant.naive_simulator import NaiveTeachingDrafter
 from email_assistant.pipeline import process_message
 from email_assistant.screening import full_detector
 from replay_university import CONFIGS, to_message
@@ -44,11 +45,13 @@ def _configure_openai():
         os.environ["OPENAI_MODEL"] = str(model)
 
 
-def _drafter(use_openai: bool):
-    if not use_openai:
-        return MockDrafter()
-    _configure_openai()
-    return OpenAIDrafter()
+def _drafter(provider_label: str):
+    if provider_label.startswith("Naive"):
+        return NaiveTeachingDrafter()
+    if provider_label.startswith("OpenAI"):
+        _configure_openai()
+        return OpenAIDrafter()
+    return MockDrafter()
 
 
 def render_explorer():
@@ -91,11 +94,11 @@ def render_explorer():
         st.write(f"**Expected factual reference:** {case['expected_policy_anchor']}")
 
     provider = st.selectbox("Drafting provider for this email",
-                            ["Offline mock (no API calls)", "OpenAI API (may incur charges)"],
+                            ["Offline mock (no API calls)", "Naive teaching simulator (not AI)", "OpenAI API (may incur charges)"],
                             key="explorer_provider")
     if st.button("Screen this email and prepare draft", type="primary"):
         try:
-            drafter = _drafter(provider.startswith("OpenAI"))
+            drafter = _drafter(provider)
             result = process_message(
                 to_message(case),
                 detector=full_detector,
@@ -231,8 +234,11 @@ def render_batch():
     )
     config_names = tuple(CONFIGS) if mode_label == "All three modes" else (mode_label,)
     provider = c.selectbox("Drafting provider", [
-        "Offline mock (recommended)", "OpenAI API (billable)"], key="batch_provider")
+        "Offline mock (recommended)", "Naive teaching simulator (not AI)", "OpenAI API (billable)"], key="batch_provider")
     use_openai = provider.startswith("OpenAI")
+    if provider.startswith("Naive"):
+        st.warning("Teaching simulator: scripted unsafe replies are deliberate. "
+                   "Do not interpret its attack-success rates as real language-model evidence.")
     total = case_count * len(config_names)
     st.info(f"Selected: {case_count} emails × {len(config_names)} configuration(s) "
             f"= {total} evaluations.")
@@ -246,7 +252,7 @@ def render_batch():
 
     if st.button("Run evaluation", type="primary", disabled=not authorized):
         try:
-            drafter = _drafter(use_openai)
+            drafter = _drafter(provider)
             progress_bar = st.progress(0, text="Starting evaluation...")
             def on_progress(done: int, count: int, mode: str):
                 progress_bar.progress(done / count, text=f"{done}/{count} evaluations · {mode}")
