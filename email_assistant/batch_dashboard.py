@@ -12,7 +12,7 @@ import os
 
 import streamlit as st
 
-from email_assistant.batch_runner import load_evaluation, run_batch
+from email_assistant.batch_runner import DATASET_PATH, load_evaluation, run_batch
 from email_assistant.drafting import MockDrafter, OpenAIDrafter
 from email_assistant.pipeline import process_message
 from email_assistant.screening import full_detector
@@ -199,6 +199,30 @@ def render_batch():
     cases, policy = _files_or_error()
     if cases is None:
         return
+    with st.expander("View or download the original 650-case dataset"):
+        st.write(f"**Dataset:** {len(cases)} fictional cases | "
+                 f"{sum(x['label'] == 'genuine' for x in cases)} genuine | "
+                 f"{sum(x['label'] == 'attack' for x in cases)} attacks")
+        st.download_button(
+            "Download original emails and labels (.jsonl)",
+            data=DATASET_PATH.read_bytes(),
+            file_name=DATASET_PATH.name,
+            mime="application/x-ndjson",
+        )
+        csv_path = DATASET_PATH.with_suffix(".csv")
+        if csv_path.is_file():
+            st.download_button(
+                "Download original dataset (.csv)",
+                data=csv_path.read_bytes(),
+                file_name=csv_path.name,
+                mime="text/csv",
+            )
+        st.download_button(
+            "Download matching fictional policy (.json)",
+            data=json.dumps(policy, indent=2, ensure_ascii=False),
+            file_name="university_test_policy.json",
+            mime="application/json",
+        )
     a, b, c = st.columns(3)
     case_count = a.selectbox("Emails per configuration", [10, 26, 100, 650], index=3)
     mode_label = b.selectbox(
