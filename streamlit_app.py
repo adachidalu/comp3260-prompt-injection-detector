@@ -103,6 +103,22 @@ st.info(
     "real student records, or connect to a real university mailbox."
 )
 
+st.divider()
+workflow = st.radio(
+    "Workflow",
+    ["Single .eml email", "Explore 650-email dataset", "Run all 650 emails"],
+    horizontal=True,
+    help="Browse Stanley's labelled university emails or run an entire evaluation in the browser.",
+)
+if workflow == "Explore 650-email dataset":
+    from email_assistant.batch_dashboard import render_explorer
+    render_explorer()
+    st.stop()
+if workflow == "Run all 650 emails":
+    from email_assistant.batch_dashboard import render_batch
+    render_batch()
+    st.stop()
+
 with st.sidebar:
     st.header("Configuration")
 
