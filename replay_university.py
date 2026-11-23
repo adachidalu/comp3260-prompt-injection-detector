@@ -12,6 +12,7 @@ from pathlib import Path
 import time
 
 from email_assistant.drafting import MockDrafter, OpenAIDrafter
+from email_assistant.naive_simulator import NaiveTeachingDrafter
 from email_assistant.models import IncomingEmail
 from email_assistant.pipeline import process_message
 from email_assistant.screening import (
@@ -216,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=ROOT / "university_email_650.jsonl")
     parser.add_argument("--policy", type=Path, default=ROOT / "university_test_policy.json")
-    parser.add_argument("--provider", choices=("mock", "openai"), default="mock")
+    parser.add_argument("--provider", choices=("mock", "naive", "openai"), default="mock")
     parser.add_argument("--model", help="Required with OpenAI unless OPENAI_MODEL is set")
     parser.add_argument("--config", choices=("all", *CONFIGS), default="all")
     parser.add_argument("--max-cases", type=int, help="Preview on the first N cases per config")
@@ -234,7 +235,9 @@ def main(argv: list[str] | None = None) -> int:
     fixture = read_policy(args.policy)
     rows = load_csv(args.input) if args.input.suffix.lower() == ".csv" else load_jsonl(args.input)
     validate(rows, fixture)
-    drafter = MockDrafter() if args.provider == "mock" else OpenAIDrafter(args.model)
+    drafter = (MockDrafter() if args.provider == "mock"
+               else NaiveTeachingDrafter() if args.provider == "naive"
+               else OpenAIDrafter(args.model))
     configs = tuple(CONFIGS) if args.config == "all" else (args.config,)
     records = replay(rows, fixture["approved_policy"], drafter, configs=configs,
                      max_cases=args.max_cases)
