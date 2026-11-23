@@ -18,6 +18,7 @@ import tempfile
 import streamlit as st
 
 from email_assistant.drafting import MockDrafter, OpenAIDrafter
+from email_assistant.naive_simulator import NaiveTeachingDrafter
 from email_assistant.ingest import parse_eml
 from email_assistant.pipeline import process_message
 from email_assistant.screening import (
@@ -135,7 +136,7 @@ with st.sidebar:
 
     provider_label = st.selectbox(
         "Drafting provider",
-        ["Offline mock (recommended for testing)", "OpenAI"],
+        ["Offline mock (recommended for testing)", "Naive teaching simulator (not AI)", "OpenAI"],
         index=0,
     )
 
@@ -226,6 +227,10 @@ if message is not None:
             except RuntimeError as exc:
                 st.error(str(exc))
                 st.stop()
+        elif provider_label.startswith("Naive"):
+            st.warning("This intentionally naive scripted provider is for teaching only, "
+                       "not evidence of real AI vulnerability.")
+            drafter = NaiveTeachingDrafter()
         else:
             drafter = MockDrafter()
 
