@@ -7,6 +7,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from .drafting import MockDrafter, OpenAIDrafter
+from .naive_simulator import NaiveTeachingDrafter
 from .ingest import parse_eml, parse_graph_message
 from .pipeline import process_message
 from .models import ProcessingResult
@@ -38,14 +39,16 @@ def main():
     p.add_argument('--graph-json', type=Path, help='Optional local JSON fixture with Graph message object(s)')
     p.add_argument('--policy', type=Path, default=ROOT / 'integration_test/mock_policy.txt')
     p.add_argument('--detector', choices=['strict', 'demo', 'none', 'original', 'full', 'favour'], default='full')
-    p.add_argument('--provider', choices=['mock', 'openai'], default='mock')
+    p.add_argument('--provider', choices=['mock', 'naive', 'openai'], default='mock')
     p.add_argument('--model', help='OpenAI model identifier; alternatively set OPENAI_MODEL')
     p.add_argument('--db', type=Path, help='Optional SQLite file to record outcomes')
     p.add_argument('--json-out', type=Path, help='Optional JSONL output for team integration')
     args = p.parse_args()
 
     policy_text = args.policy.read_text(encoding='utf-8')
-    drafter = MockDrafter() if args.provider == 'mock' else OpenAIDrafter(args.model)
+    drafter = (MockDrafter() if args.provider == 'mock'
+               else NaiveTeachingDrafter() if args.provider == 'naive'
+               else OpenAIDrafter(args.model))
     if args.detector in ('full', 'favour'):
         detector = full_detector
     elif args.detector == 'original':
