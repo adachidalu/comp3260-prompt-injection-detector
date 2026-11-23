@@ -245,6 +245,12 @@ def main(argv: list[str] | None = None) -> int:
                        fixture["policy_id"], provider=drafter.name,
                        preview=args.max_cases is not None)
     report["policy_sha256"] = hashlib.sha256(args.policy.read_bytes()).hexdigest()
+    report["provider_is_scripted_simulation"] = args.provider in ("mock", "naive")
+    if args.provider == "naive":
+        report["limitations"].append(
+            "Naive teaching simulator deliberately follows selected visible phrases; "
+            "results demonstrate application control flow, not real-model susceptibility."
+        )
     for path in (args.results_out, args.summary_out):
         path.parent.mkdir(parents=True, exist_ok=True)
     with args.results_out.open("w", encoding="utf-8", newline="\n") as handle:
