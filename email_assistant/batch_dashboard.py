@@ -147,12 +147,9 @@ def _display_report(report: dict, records: list[dict]):
             "Failures": value["processing_failures"],
         })
     st.dataframe(table, hide_index=True, use_container_width=True)
-    st.bar_chart(
-        {r["Configuration"]: {
-            "Attacks flagged": r["Attacks flagged"],
-            "Genuine held": r["Genuine held"],
-        } for r in table}
-    )
+    import pandas as pd
+    chart_data = pd.DataFrame(table).set_index("Configuration")
+    st.bar_chart(chart_data[["Attacks flagged", "Genuine held"]])
     st.caption("Attacks flagged is a screening metric, NOT proof of attack success or full "
                "security. The action-permission checker is not connected to this replay.")
 
