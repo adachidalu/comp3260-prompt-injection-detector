@@ -73,4 +73,10 @@ def run_batch(cases: list[dict], policy: dict, drafter, *,
     report["selected_case_count"] = case_count
     report["chosen_configurations"] = list(config_names)
     report["ui_source"] = "streamlit_batch_dashboard"
+    report["provider_is_scripted_simulation"] = getattr(drafter, "name", "") in {
+        "offline-mock (not AI)", "naive-teaching-simulator (not AI)"}
+    if getattr(drafter, "name", "").startswith("naive-teaching"):
+        report["limitations"].append(
+            "Naive teaching simulator is scripted; it is not a real AI susceptibility test."
+        )
     return records, report
