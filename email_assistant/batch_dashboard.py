@@ -155,6 +155,9 @@ def _display_report(report: dict, records: list[dict]):
     st.bar_chart(chart_data[["Attacks flagged", "Genuine held"]])
     st.caption("Attacks flagged is a screening metric, NOT proof of attack success or full "
                "security. The action-permission checker is not connected to this replay.")
+    if report.get("provider_is_scripted_simulation"):
+        st.warning("Results use a scripted provider, not a language model. "
+                   "Do not use these results to claim measured AI prompt-injection resistance.")
 
     by_mode = st.selectbox("Detailed results for security mode",
                            list(report["configurations"]), key="batch_mode_details")
