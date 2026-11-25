@@ -253,12 +253,27 @@ def _balanced_sample(rows: list[dict], sample_size: int) -> list[dict]:
     )
 
 
+class _CountingDrafter:
+    """Count actual model calls without changing the production drafter."""
+
+    def __init__(self, drafter):
+        self.drafter = drafter
+        self.name = drafter.name
+        self.requires_policy_text = getattr(drafter, "requires_policy_text", True)
+        self.enforce_policy_facts = getattr(drafter, "enforce_policy_facts", True)
+        self.api_calls = 0
+
+    def generate(self, message, policy_text):
+        self.api_calls += 1
+        return self.drafter.generate(message, policy_text)
+
+
 def _build_drafter():
     if not _configure_openai():
         raise RuntimeError("OpenAI API key is not configured")
 
     model = os.getenv("OPENAI_MODEL") or DEFAULT_WEB_MODEL
-    return OpenAIDrafter(model=model)
+    return _CountingDrafter(OpenAIDrafter(model=model))
 
 
 def _run_sample_batch(
@@ -277,6 +292,8 @@ def _run_sample_batch(
         for phase_name, config in PHASES.items():
             started = time.perf_counter()
 
+            calls_before = drafter.api_calls
+
             result = process_message(
                 _message(row),
                 detector=config["detector"],
@@ -286,6 +303,7 @@ def _run_sample_batch(
                 audit=False,
             )
 
+            api_called = drafter.api_calls > calls_before
             elapsed_ms = (time.perf_counter() - started) * 1000
             is_attack = row["label"] == "attack"
             held = result.verdict in ("review", "block")
@@ -307,6 +325,7 @@ def _run_sample_batch(
                     "attack_missed": is_attack and not held,
                     "genuine_held": (not is_attack) and held,
                     "draft_created": bool(result.draft),
+                    "api_called": api_called,
                     "provider": result.provider,
                     "reason": result.reason,
                     "duration_ms": elapsed_ms,
@@ -365,6 +384,11 @@ def _partial_replay_summary(results_df: pd.DataFrame) -> pd.DataFrame:
                 ),
                 "Genuine seen": len(genuine),
                 "Genuine held": genuine_held,
+                "API calls attempted": (
+                    int(part["api_called"].sum())
+                    if not part.empty
+                    else 0
+                ),
                 "Drafts created": (
                     int(part["draft_created"].sum())
                     if not part.empty
@@ -635,12 +659,14 @@ confirm_paid = st.checkbox(
 
 run_state = st.session_state.get("sampled_replay_state")
 
-if st.button(
+start_clicked = st.button(
     "Start / restart sampled replay",
     type="primary",
     disabled=not confirm_paid,
     use_container_width=True,
-):
+)
+
+if start_clicked:
     st.session_state["sampled_replay_state"] = {
         "provider": "OpenAI fixed-policy model",
         "sample_size": sample_size,
@@ -748,7 +774,7 @@ if run_state is not None:
         run_state["stopped"] = False
         st.session_state["sampled_replay_state"] = run_state
 
-    if run_next:
+    if run_next or start_clicked:
         start = completed_emails
         end = min(
             start + batch_size,
@@ -802,7 +828,7 @@ if run_state is not None:
             sampled_df["label"] == "attack"
         ]
 
-        metric_left, metric_middle, metric_right = st.columns(3)
+        metric_left, metric_middle, metric_right, metric_fourth = st.columns(4)
 
         metric_left.metric(
             "Attack phase-runs caught",
@@ -819,6 +845,13 @@ if run_state is not None:
         )
 
         metric_right.metric(
+            "API calls attempted",
+            int(
+                sampled_df["api_called"].sum()
+            ),
+        )
+
+        metric_fourth.metric(
             "Drafts created",
             int(
                 sampled_df["draft_created"].sum()
