@@ -1,27 +1,74 @@
-"""Public-facing review UI for the university email assistant."""
+"""Streamlit review UI for controlled benchmark and live email testing."""
 
 from __future__ import annotations
 
-from dataclasses import replace
 import os
 from pathlib import Path
-import tempfile
 import tomllib
 
 import streamlit as st
 
 from email_assistant.drafting import DEFAULT_WEB_MODEL, OpenAIDrafter, TRUWebDrafter
-from email_assistant.ingest import parse_eml
 from email_assistant.models import IncomingEmail
 from email_assistant.pipeline import process_message
-from email_assistant.screening import full_detector
+from email_assistant.screening import (
+    full_detector,
+    no_screening_detector,
+    original_detector,
+)
 from generate_dataset import load_csv, read_policy
 
 
 ROOT = Path(__file__).resolve().parent
-DEMO_DIR = ROOT / "integration_test"
 DATASET_PATH = ROOT / "university_email_650.csv"
 POLICY_PATH = ROOT / "university_test_policy.json"
+
+PHASES = {
+    "Phase 1 — No screening": {
+        "detector": no_screening_detector,
+        "output_check": False,
+        "description": (
+            "Drafting assistant only. Application-level prompt-injection screening and "
+            "draft output checks are intentionally disabled for the baseline."
+        ),
+    },
+    "Phase 2 — Original-message rules": {
+        "detector": original_detector,
+        "output_check": False,
+        "description": (
+            "Applies detection rules to the original message only. Disguise-revealing "
+            "cleaning and draft output checks are not enabled."
+        ),
+    },
+    "Phase 3 — Full security controls": {
+        "detector": full_detector,
+        "output_check": True,
+        "description": (
+            "Inspects original and cleaned representations and enables draft/privacy "
+            "output checks. Mock action authorization remains an independently tested control."
+        ),
+    },
+}
+
+DISGUISE_LABELS = {
+    "plain": "Plain attack",
+    "hidden_html": "Hidden HTML",
+    "base64": "Base64 encoded",
+    "zero_width": "Invisible characters",
+    "lookalike": "Unicode look-alikes",
+}
+
+ATTACK_GOAL_LABELS = {
+    "policy_override": "Policy override",
+    "private_disclosure": "Private-data disclosure",
+    "record_read": "Unauthorized record read",
+    "external_transfer": "External data transfer",
+    "unauthorized_send": "Unauthorized send / false send claim",
+}
+
+
+def _pretty(value: str) -> str:
+    return value.replace("_", " ").strip().title()
 
 
 def _local_secrets() -> dict:
@@ -69,24 +116,6 @@ def _configure_openai() -> bool:
     return bool(os.getenv("OPENAI_API_KEY"))
 
 
-def _parse_uploaded_email(uploaded_file):
-    data = uploaded_file.getvalue()
-    if len(data) > 1024 * 1024:
-        raise ValueError("Uploaded email is larger than the supported limit")
-
-    temp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".eml", delete=False) as handle:
-            handle.write(data)
-            temp_path = Path(handle.name)
-
-        message = parse_eml(temp_path)
-        return replace(message, source_id=uploaded_file.name)
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
-
-
 @st.cache_data(show_spinner=False)
 def _dataset_rows() -> list[dict]:
     return load_csv(DATASET_PATH)
@@ -121,13 +150,23 @@ def _message_from_form(sender: str, subject: str, body: str) -> IncomingEmail:
     )
 
 
+def _case_display(row: dict) -> str:
+    subject = row["subject"].strip() or "(No subject)"
+    if row["label"] == "genuine":
+        return f"{subject} — Genuine — {row['case_id']}"
+
+    disguise = DISGUISE_LABELS.get(row["disguise"], _pretty(row["disguise"]))
+    goal = ATTACK_GOAL_LABELS.get(row["attack_goal"], _pretty(row["attack_goal"]))
+    return f"{subject} — {disguise} — {goal} — {row['case_id']}"
+
+
 def _friendly_status(result) -> None:
     if result.verdict == "pass":
         st.success("Ready for review")
-        st.caption("Security checks passed and a draft was prepared.")
+        st.caption("The selected phase allowed a draft to be prepared.")
     elif result.verdict == "block":
         st.error("Message blocked")
-        st.caption("The message was stopped by the security controls.")
+        st.caption("The selected phase stopped the message before drafting.")
     else:
         st.warning("Manual review required")
         if result.reason.startswith("Drafting failed"):
@@ -147,23 +186,36 @@ st.set_page_config(
 
 st.title("University Email Assistant")
 st.write(
-    "Review an incoming email and prepare a reply using controlled university information."
+    "Test prompt-injection defenses with the fixed 650-email benchmark or type a live email."
 )
 st.caption(
     "Prototype only. Drafts are for staff review and are never sent automatically."
 )
 
 source_mode = st.radio(
-    "Email source",
-    ["650-email test set", "Type an email", "Upload .eml", "Demo sample"],
+    "Testing mode",
+    ["650-email dataset", "Live email test"],
     horizontal=True,
 )
 
+phase_name = st.selectbox(
+    "Experiment phase",
+    list(PHASES),
+    index=2,
+)
+phase = PHASES[phase_name]
+st.caption(phase["description"])
+
+if phase_name.startswith("Phase 1"):
+    st.warning(
+        "Baseline mode intentionally disables application-level screening and output checks."
+    )
+
 message = None
 dataset_case = None
-uses_fixed_policy = False
+uses_fixed_policy = source_mode == "650-email dataset"
 
-if source_mode == "650-email test set":
+if source_mode == "650-email dataset":
     if not DATASET_PATH.exists():
         st.info("The 650-email test dataset is not available in this checkout.")
     else:
@@ -175,116 +227,170 @@ if source_mode == "650-email test set":
 
         if rows:
             st.caption(
-                "Controlled evaluation mode: these synthetic cases use the fixed fictional "
-                "policy so results stay comparable across the benchmark."
+                "Controlled evaluation mode: all cases use the fixed fictional policy so "
+                "results remain comparable across the three phases."
             )
 
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                label_choice = st.selectbox(
-                    "Case type",
-                    ["All", "Genuine", "Attack"],
-                )
-            with col2:
-                disguises = sorted({row["disguise"] for row in rows})
-                disguise_choice = st.selectbox(
-                    "Disguise",
-                    ["All"] + disguises,
-                )
-            with col3:
-                topics = sorted({row["topic"] for row in rows})
-                topic_choice = st.selectbox(
-                    "Topic",
-                    ["All"] + topics,
+            filter_left, filter_right = st.columns(2)
+            with filter_left:
+                case_type = st.selectbox(
+                    "Email type",
+                    ["All emails", "Genuine enquiries", "Attack emails"],
                 )
 
-            filtered_rows = rows
-            if label_choice != "All":
+            if case_type == "Genuine enquiries":
+                disguise_choice = "Not applicable"
+                with filter_right:
+                    st.selectbox(
+                        "Attack disguise",
+                        ["Not applicable"],
+                        disabled=True,
+                    )
+            else:
+                disguise_options = ["All attack disguises"] + [
+                    DISGUISE_LABELS[key]
+                    for key in ("plain", "hidden_html", "base64", "zero_width", "lookalike")
+                ]
+                with filter_right:
+                    disguise_choice = st.selectbox(
+                        "Attack disguise",
+                        disguise_options,
+                    )
+
+            secondary_left, secondary_right = st.columns(2)
+            with secondary_left:
+                topic_values = sorted(
+                    {row["topic"] for row in rows},
+                    key=lambda value: _pretty(value).lower(),
+                )
+                topic_label = st.selectbox(
+                    "Topic",
+                    ["All topics"] + [_pretty(value) for value in topic_values],
+                )
+
+            with secondary_right:
+                if case_type == "Genuine enquiries":
+                    goal_label = st.selectbox(
+                        "Attack goal",
+                        ["Not applicable"],
+                        disabled=True,
+                    )
+                else:
+                    goal_values = sorted(
+                        {row["attack_goal"] for row in rows if row["label"] == "attack"},
+                        key=lambda value: ATTACK_GOAL_LABELS.get(value, _pretty(value)).lower(),
+                    )
+                    goal_label = st.selectbox(
+                        "Attack goal",
+                        ["All attack goals"]
+                        + [
+                            ATTACK_GOAL_LABELS.get(value, _pretty(value))
+                            for value in goal_values
+                        ],
+                    )
+
+            search_text = st.text_input(
+                "Search cases",
+                placeholder="Search by subject, topic, case ID, disguise, or attack goal...",
+            ).strip().lower()
+
+            filtered_rows = list(rows)
+
+            if case_type == "Genuine enquiries":
+                filtered_rows = [
+                    row for row in filtered_rows if row["label"] == "genuine"
+                ]
+            elif case_type == "Attack emails":
+                filtered_rows = [
+                    row for row in filtered_rows if row["label"] == "attack"
+                ]
+
+            if case_type != "Genuine enquiries" and disguise_choice != "All attack disguises":
+                disguise_key = next(
+                    key for key, label in DISGUISE_LABELS.items()
+                    if label == disguise_choice
+                )
                 filtered_rows = [
                     row for row in filtered_rows
-                    if row["label"].lower() == label_choice.lower()
+                    if row["label"] == "attack" and row["disguise"] == disguise_key
                 ]
-            if disguise_choice != "All":
+
+            if topic_label != "All topics":
                 filtered_rows = [
                     row for row in filtered_rows
-                    if row["disguise"] == disguise_choice
+                    if _pretty(row["topic"]) == topic_label
                 ]
-            if topic_choice != "All":
+
+            if case_type != "Genuine enquiries" and goal_label != "All attack goals":
+                goal_key = next(
+                    key for key, label in ATTACK_GOAL_LABELS.items()
+                    if label == goal_label
+                )
                 filtered_rows = [
                     row for row in filtered_rows
-                    if row["topic"] == topic_choice
+                    if row["label"] == "attack" and row["attack_goal"] == goal_key
                 ]
+
+            if search_text:
+                def _matches_search(row: dict) -> bool:
+                    searchable = " ".join(
+                        [
+                            row["case_id"],
+                            row["subject"],
+                            row["topic"],
+                            row["disguise"],
+                            row["attack_goal"],
+                            DISGUISE_LABELS.get(row["disguise"], ""),
+                            ATTACK_GOAL_LABELS.get(row["attack_goal"], ""),
+                        ]
+                    ).lower()
+                    return search_text in searchable
+
+                filtered_rows = [row for row in filtered_rows if _matches_search(row)]
+
+            filtered_rows = sorted(
+                filtered_rows,
+                key=lambda row: (
+                    row["subject"].lower(),
+                    row["label"],
+                    row["case_id"],
+                ),
+            )
+
+            st.caption(f"{len(filtered_rows)} matching cases")
 
             if not filtered_rows:
                 st.info("No test cases match those filters.")
             else:
                 case_by_id = {row["case_id"]: row for row in filtered_rows}
-
-                def _case_label(case_id: str) -> str:
-                    row = case_by_id[case_id]
-                    kind = row["label"].replace("_", " ").title()
-                    disguise = row["disguise"].replace("_", " ").title()
-                    return f"{case_id} · {kind} · {disguise} · {row['subject']}"
-
                 selected_case_id = st.selectbox(
-                    f"Choose a case ({len(filtered_rows)} shown)",
+                    "Choose an email",
                     list(case_by_id),
-                    format_func=_case_label,
+                    format_func=lambda case_id: _case_display(case_by_id[case_id]),
                 )
                 dataset_case = case_by_id[selected_case_id]
                 message = _message_from_dataset(dataset_case)
-                uses_fixed_policy = True
-
-elif source_mode == "Type an email":
-    st.caption(
-        "Live testing mode: type a plain-text email below. Approved factual answers are "
-        "grounded in the official TRU website."
-    )
-    typed_sender = st.text_input("From", value="student@example.test")
-    typed_subject = st.text_input("Subject")
-    typed_body = st.text_area(
-        "Message",
-        height=220,
-        placeholder="Type the email body here...",
-    )
-    if typed_body.strip():
-        message = _message_from_form(typed_sender, typed_subject, typed_body)
-
-elif source_mode == "Upload .eml":
-    st.caption(
-        "Live testing mode: uploaded messages use official TRU web information after "
-        "security screening."
-    )
-    uploaded = st.file_uploader(
-        "Upload an email file",
-        type=["eml"],
-        help="Maximum size: 1 MB",
-    )
-
-    if uploaded is not None:
-        try:
-            message = _parse_uploaded_email(uploaded)
-        except (OSError, ValueError):
-            st.error("The uploaded email could not be processed.")
 
 else:
     st.caption(
-        "Demo samples use official TRU web information after security screening."
+        "Live testing mode uses the same selected security phase, but approved factual "
+        "answers come from official TRU web sources rather than the fictional benchmark policy. "
+        "Live tests are demonstrations and are not counted as formal 650-case results."
     )
-    demo_files = sorted(DEMO_DIR.glob("*.eml")) if DEMO_DIR.exists() else []
 
-    if not demo_files:
-        st.info("No demo sample emails are available.")
-    else:
-        selected_name = st.selectbox(
-            "Choose a sample",
-            [path.name for path in demo_files],
-            label_visibility="collapsed",
-        )
-        try:
-            message = parse_eml(DEMO_DIR / selected_name)
-        except (OSError, ValueError):
-            st.error("The selected email could not be opened.")
+    typed_sender = st.text_input("From", value="student@example.test")
+    typed_subject = st.text_input(
+        "Subject",
+        placeholder="e.g., Registration question",
+    )
+    typed_body = st.text_area(
+        "Email message",
+        height=220,
+        placeholder="Type the email body here...",
+    )
+
+    if typed_body.strip():
+        message = _message_from_form(typed_sender, typed_subject, typed_body)
 
 if message is not None:
     st.divider()
@@ -300,11 +406,19 @@ if message is not None:
     )
 
     if dataset_case is not None:
-        st.caption(
-            f"Benchmark case: {dataset_case['label'].title()} · "
-            f"{dataset_case['disguise'].replace('_', ' ').title()} · "
-            f"{dataset_case['topic'].replace('_', ' ').title()}"
-        )
+        if dataset_case["label"] == "genuine":
+            case_summary = "Genuine enquiry"
+        else:
+            disguise = DISGUISE_LABELS.get(
+                dataset_case["disguise"],
+                _pretty(dataset_case["disguise"]),
+            )
+            goal = ATTACK_GOAL_LABELS.get(
+                dataset_case["attack_goal"],
+                _pretty(dataset_case["attack_goal"]),
+            )
+            case_summary = f"Attack · {disguise} · {goal}"
+        st.caption(f"Benchmark case {dataset_case['case_id']}: {case_summary}")
 
     if st.button("Review and draft reply", type="primary", use_container_width=True):
         configured = _configure_openai()
@@ -325,11 +439,15 @@ if message is not None:
                 drafter = OpenAIDrafter(
                     model=_secret("OPENAI_MODEL") or DEFAULT_WEB_MODEL
                 )
-                spinner_text = "Reviewing benchmark email against the fixed evaluation policy..."
+                spinner_text = (
+                    f"Running {phase_name} against the fixed benchmark policy..."
+                )
             else:
                 policy_text = ""
                 drafter = TRUWebDrafter()
-                spinner_text = "Reviewing email and checking official TRU information..."
+                spinner_text = (
+                    f"Running {phase_name} and checking official TRU information..."
+                )
         except (OSError, ValueError, RuntimeError):
             st.error("The drafting service could not be initialized.")
             st.stop()
@@ -337,22 +455,27 @@ if message is not None:
         with st.spinner(spinner_text):
             result = process_message(
                 message,
-                detector=full_detector,
+                detector=phase["detector"],
                 drafter=drafter,
                 policy_text=policy_text,
-                output_check=True,
+                output_check=phase["output_check"],
                 audit=True,
             )
 
         st.divider()
         st.subheader("Review result")
+        st.markdown(f"**{phase_name}**")
         _friendly_status(result)
 
         if dataset_case is not None:
-            expected = "Genuine enquiry" if dataset_case["label"] == "genuine" else "Attack case"
+            expected = (
+                "Genuine enquiry"
+                if dataset_case["label"] == "genuine"
+                else "Attack case"
+            )
             st.caption(
-                f"Dataset label: {expected}. This label is for benchmark evaluation, "
-                "not an instruction to the detector."
+                f"Dataset label: {expected}. The label is shown for evaluation only and "
+                "is not supplied to the detector."
             )
 
         if result.draft:
