@@ -251,6 +251,12 @@ st.caption(
     "Prototype only. Drafts are for staff review and are never sent automatically."
 )
 
+st.page_link(
+    "pages/2_Benchmark_Evaluation.py",
+    label="Open 650-email evaluation dashboard",
+    icon="📊",
+)
+
 source_mode = st.radio(
     "Testing mode",
     ["650-email dataset", "Live email test"],
