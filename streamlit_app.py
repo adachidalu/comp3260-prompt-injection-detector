@@ -13,10 +13,15 @@ from __future__ import annotations
 from dataclasses import replace
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 
 import streamlit as st
 
+import email_assistant
+import email_assistant.drafting as drafting_module
+import email_assistant.ingest as ingest_module
+import email_assistant.pipeline as pipeline_module
 from email_assistant.drafting import MockDrafter, OpenAIDrafter
 from email_assistant.ingest import parse_eml
 from email_assistant.pipeline import process_message
@@ -47,6 +52,46 @@ MOCK_ACTIONS = {
     "Transfer information externally": "external_transfer",
     "Send email": "send_email",
 }
+
+
+def _git_value(*args: str) -> str:
+    """Read local Git metadata so the UI can prove which checkout is running."""
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "(unavailable)"
+    if result.returncode != 0:
+        return "(unavailable)"
+    return result.stdout.strip() or "(unknown)"
+
+
+def _display_path(module_file: str) -> str:
+    path = Path(module_file).resolve()
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _runtime_info() -> dict:
+    status = _git_value("status", "--porcelain")
+    return {
+        "branch": _git_value("branch", "--show-current"),
+        "commit": _git_value("rev-parse", "--short", "HEAD"),
+        "working_tree": "clean" if status in ("", "(unknown)") else "modified",
+        "streamlit_app": _display_path(__file__),
+        "email_assistant_package": _display_path(email_assistant.__file__),
+        "drafting_module": _display_path(drafting_module.__file__),
+        "ingest_module": _display_path(ingest_module.__file__),
+        "pipeline_module": _display_path(pipeline_module.__file__),
+    }
 
 
 def _secret(name: str) -> str | None:
@@ -116,6 +161,16 @@ st.info(
 
 with st.sidebar:
     st.header("Configuration")
+
+    runtime = _runtime_info()
+    st.caption(
+        f"Running branch `{runtime['branch']}` at commit `{runtime['commit']}`"
+    )
+    if runtime["working_tree"] != "clean":
+        st.warning("Local working tree has uncommitted changes.")
+
+    with st.expander("Runtime version and module paths"):
+        st.json(runtime)
 
     detector_label = st.selectbox(
         "Security mode",
