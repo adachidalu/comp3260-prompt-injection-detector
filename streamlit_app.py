@@ -6,6 +6,7 @@ from dataclasses import replace
 import os
 from pathlib import Path
 import tempfile
+import tomllib
 
 import streamlit as st
 
@@ -19,17 +20,40 @@ ROOT = Path(__file__).resolve().parent
 DEMO_DIR = ROOT / "integration_test"
 
 
+def _local_secrets() -> dict:
+    """Read the project-local secrets file without exposing secret values."""
+    secrets_path = ROOT / ".streamlit" / "secrets.toml"
+    if not secrets_path.exists():
+        return {}
+
+    try:
+        with secrets_path.open("rb") as handle:
+            return tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+
+
 def _secret(name: str) -> str | None:
+    """Read a secret from Streamlit, then fall back to the local TOML file."""
+    value = None
+
     try:
         value = st.secrets.get(name)
     except Exception:
-        value = None
+        pass
+
+    if value is None:
+        value = _local_secrets().get(name)
+
     if value is None:
         return None
-    return str(value)
+
+    value = str(value).strip()
+    return value or None
 
 
-def _configure_openai() -> None:
+def _configure_openai() -> bool:
+    """Load OpenAI configuration and report whether an API key is available."""
     api_key = _secret("OPENAI_API_KEY")
     model = _secret("OPENAI_MODEL")
 
@@ -37,6 +61,8 @@ def _configure_openai() -> None:
         os.environ["OPENAI_API_KEY"] = api_key
     if model:
         os.environ["OPENAI_MODEL"] = model
+
+    return bool(os.getenv("OPENAI_API_KEY"))
 
 
 def _parse_uploaded_email(uploaded_file):
@@ -139,13 +165,16 @@ if message is not None:
     )
 
     if st.button("Review and draft reply", type="primary", use_container_width=True):
-        _configure_openai()
+        configured = _configure_openai()
 
-        if not os.getenv("OPENAI_API_KEY"):
+        if not configured:
+            secrets_path = ROOT / ".streamlit" / "secrets.toml"
             st.error(
-                "The drafting service is not configured for this deployment. "
-                "Security screening is available, but an AI draft cannot be generated."
+                "The drafting service is not configured. "
+                "Check that .streamlit/secrets.toml contains OPENAI_API_KEY."
             )
+            if not secrets_path.exists():
+                st.caption("No local secrets file was found for this project.")
             st.stop()
 
         try:
