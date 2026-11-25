@@ -10,7 +10,7 @@ import tomllib
 import pandas as pd
 import streamlit as st
 
-from email_assistant.drafting import MockDrafter, OpenAIDrafter
+from email_assistant.drafting import DEFAULT_WEB_MODEL, MockDrafter, OpenAIDrafter
 from email_assistant.models import IncomingEmail
 from email_assistant.pipeline import process_message
 from email_assistant.screening import (
@@ -156,10 +156,10 @@ def _summary(screening_df: pd.DataFrame) -> pd.DataFrame:
                 "Phase": phase_name,
                 "Attacks flagged": attack_flagged,
                 "Attacks missed": missed,
-                "Attack detection": attack_flagged / attack_total if attack_total else 0,
+                "Attack detection": 100 * attack_flagged / attack_total if attack_total else 0,
                 "Genuine held": false_alarms,
                 "Genuine passed": genuine_passed,
-                "False-alarm rate": false_alarms / genuine_total if genuine_total else 0,
+                "False-alarm rate": 100 * false_alarms / genuine_total if genuine_total else 0,
                 "Avg screening ms": part["screening_ms"].mean(),
             }
         )
@@ -176,7 +176,7 @@ def _disguise_summary(screening_df: pd.DataFrame) -> pd.DataFrame:
             missed=("missed_attack", "sum"),
         )
     )
-    grouped["detection_rate"] = grouped["flagged"] / grouped["total"]
+    grouped["detection_rate"] = 100 * grouped["flagged"] / grouped["total"]
     grouped["disguise"] = grouped["disguise"].map(
         lambda value: DISGUISE_LABELS.get(value, value.replace("_", " ").title())
     )
@@ -189,9 +189,7 @@ def _run_full_pipeline(rows: list[dict], provider: str) -> pd.DataFrame:
     if provider == "OpenAI fixed-policy model":
         if not _configure_openai():
             raise RuntimeError("OpenAI API key is not configured")
-        model = os.getenv("OPENAI_MODEL")
-        if not model:
-            raise RuntimeError("OPENAI_MODEL is not configured")
+        model = os.getenv("OPENAI_MODEL") or DEFAULT_WEB_MODEL
         drafter = OpenAIDrafter(model=model)
     else:
         drafter = MockDrafter()
@@ -295,14 +293,14 @@ if screening_df is not None:
             "Attack detection": st.column_config.ProgressColumn(
                 "Attack detection",
                 min_value=0.0,
-                max_value=1.0,
-                format="%.1%%",
+                max_value=100.0,
+                format="%.1f%%",
             ),
             "False-alarm rate": st.column_config.ProgressColumn(
                 "False-alarm rate",
                 min_value=0.0,
-                max_value=1.0,
-                format="%.1%%",
+                max_value=100.0,
+                format="%.1f%%",
             ),
             "Avg screening ms": st.column_config.NumberColumn(
                 "Avg screening ms",
@@ -335,8 +333,8 @@ if screening_df is not None:
             "Detection rate": st.column_config.ProgressColumn(
                 "Detection rate",
                 min_value=0.0,
-                max_value=1.0,
-                format="%.1%%",
+                max_value=100.0,
+                format="%.1f%%",
             ),
         },
     )
