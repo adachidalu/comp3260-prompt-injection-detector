@@ -1,163 +1,179 @@
-# Team Integration Boundaries
+# Team Integration Boundaries and Current Architecture
 
-This file exists to prevent accidental overlap between workstreams.
+This file records the current shared integration points so teammate-owned rules
+are reused rather than copied.
 
-## Implemented on the `favour` branch
+## Maintained application path
 
-### Detection workstream
+New application code should use the deployable `email_assistant` package.
 
-Official team-facing detector:
-
-```python
-from .screening import full_detector
-
-decision = full_detector(message)
+```text
+synthetic email / Graph fixture
+        |
+        v
+email_assistant.ingest + intake_guard
+        |
+        v
+Favour full_detector
+        |
+        v
+Amarachi verdict_handler
+        |
+        +---- REVIEW/BLOCK ----> no drafting
+        |
+        v
+Chinaza MockDrafter / OpenAIDrafter
+        |
+        v
+Chinaza policy-bound output checks
+        |
+        v
+Amarachi output_validator
+        |
+        v
+staff-review draft only
 ```
 
-Input:
+The Streamlit app uses this path through:
 
 ```python
-IncomingEmail
+from email_assistant.pipeline import process_message
 ```
 
-Output:
+The legacy root `pipeline.py` is now only a compatibility wrapper so older
+imports do not silently bypass the integrated controls.
+
+## Favour: prompt-injection detection
+
+Official detector:
 
 ```python
-ScreeningDecision(
-    verdict="pass" | "review" | "block",
-    reason="...",
-    evidence="...",
-)
+from email_assistant.screening import full_detector
 ```
 
-The detector currently covers:
+It returns a shared `ScreeningDecision` and covers:
 
 - openly written prompt-injection instructions
-- suspicious instructions hidden in HTML/CSS
+- hidden HTML/CSS
 - Base64-encoded instructions
-- zero-width/invisible-character disguises
+- zero-width/invisible characters
 - selected Unicode look-alike/confusable characters
 
-Comparison adapters are also available:
+Evaluation adapters remain:
 
-- `no_screening_detector`: baseline evaluation only
-- `original_detector`: original/unmodified message rules
-- `full_detector`: original + disguise-revealing transforms
+- `no_screening_detector`
+- `original_detector`
+- `full_detector`
 
-The older name `favour_detector` is a temporary compatibility alias only.
-New integration code should use `full_detector`.
+Do not copy detector rules into other modules.
 
+## Chinaza: intake and controlled drafting
 
-## Favour-owned validation tools now included
+The maintained package path preserves:
 
-These tools validate the detector without taking over teammate-owned components.
+- raw email/HTML for security inspection
+- separate inspection and student-visible text
+- guarded MIME/attachment/size handling
+- mock and OpenAI drafting adapters
+- policy-bound output checks
+- no real send capability
 
-- `run_detector_integration_tests.py` runs real synthetic `.eml` files through
-  intake + `full_detector` and checks PASS / REVIEW / BLOCK behavior.
-- `generate_detector_pilot.py` creates the fixed 26-case DEVELOPMENT pilot:
-  6 genuine, 4 plain attacks, and 16 disguised variants.
-- `detector_replay.py` replays a labelled CSV through `none`, `original`,
-  and `full` detector configurations and exports:
-  - attacks flagged
-  - missed attacks
-  - genuine enquiries held
-  - false-alarm rate
-  - processing failures
-  - screening runtime
-  - results by disguise type and base attack
+The OpenAI adapter still runs with `tools=[]` for the controlled experiment.
 
-For the final 650-case replay, this detector tool can consume the correctly
-labelled university-email CSV once the team supplies it. It does not fabricate
-AI drafting cost, reviewer minutes, draft accuracy, action-denial counts, or
-attack-goal success.
+## Amarachi: verdict, output, action, and audit controls
 
-## Chinaza: email intake and AI drafting integration
+The root teammate modules remain their source of truth:
 
-Existing files such as `ingest.py` and `drafting.py` remain the intake/drafting
-boundary. The detection branch must not replace mailbox retrieval, Graph
-authentication/polling, or AI provider logic.
+- `verdict_handler.py`
+- `output_validator.py`
+- `action_authorizer.py`
+- `db_manager.py`
 
-Detector requirement from intake:
+`email_assistant/security_controls.py` adapts these modules for the application
+without duplicating their rule logic.
 
-- preserve `raw_body` so hidden HTML evidence is not lost
-- provide `inspection_text` for security inspection
-- provide `student_text` separately for drafting after PASS
+Current integration:
 
-## Amarachi: verdict/security handling integration
+- PASS/REVIEW/BLOCK behavior is applied before drafting.
+- The privacy output validator runs after the existing policy-bound draft check.
+- Mock action authorization is exposed in Streamlit for demonstration.
+- Verdicts and mock action decisions can be logged to local SQLite.
+- Database failures do not weaken a REVIEW/BLOCK decision.
 
-The detector only returns a decision. It does not implement the final
-application behavior for all verdicts or security actions.
+The application performs no real student-record read, external transfer, or
+email send.
 
-Integration point:
+## Stanley: university-email dataset and replay
+
+The repository now contains the university-email evaluation artifacts:
+
+- `university_email_650.csv`
+- `university_email_650.jsonl`
+- `university_test_policy.json`
+- `replay_university.py`
+- `STANLEY_DATASET_AND_REPLAY.md`
+
+The obsolete scientific benchmark warning from the earlier development branch
+no longer applies to current `main`.
+
+The replay uses `email_assistant.pipeline.process_message`, so pipeline output
+checks are shared with the application rather than reimplemented.
+
+## Streamlit review UI
+
+`streamlit_app.py` now demonstrates:
+
+- guarded synthetic email intake
+- detector configuration comparison
+- PASS / REVIEW / BLOCK results
+- controlled mock/OpenAI drafting
+- integrated output validation
+- mock action permission checks
+- local audit counts
+
+The UI remains review-only and does not connect to a real mailbox or records
+system.
+
+## Audit database
+
+`db_manager.py` creates `security_audit.db` when audit logging is used.
+
+The repository ignores `*.db` and `*.sqlite`, so the local audit database
+must not be committed.
+
+## Regression tests
+
+Run from the repository root:
+
+```powershell
+python -m unittest test_package_smoke.py test_security_integration.py -v
+python -m unittest discover -s tests -v
+```
+
+The integration regression tests verify:
+
+- a genuine email can reach drafting
+- prompt injection is held before drafting
+- a deliberately leaky draft is held by the privacy validator
+- policy reads are allowed while record reads/transfers/sends are denied
+- verdict and action audit records are written to SQLite
+
+## Rule for future work
+
+Keep each security concern independent:
 
 ```text
-full_detector(message)
-       |
-       v
-ScreeningDecision
-       |
-       v
-[verdict/security handling component]
+intake validation
+-> prompt-injection detection
+-> application verdict policy
+-> drafting
+-> output validation
+-> action authorization
+-> audit
 ```
 
-That component should consume the shared verdict rather than duplicate detector
-rules.
+A downstream control must not turn REVIEW or BLOCK back into PASS.
 
-## Other teammate-owned components: placeholders only
-
-Exact ownership should be confirmed by the team before implementation.
-
-### Action permission checker placeholder
-
-Expected behavior from the proposal:
-
-- deny prohibited synthetic record reads
-- deny external transfers
-- deny unauthorized send actions
-- log denied mock actions
-- work even when called directly rather than only through the detector
-
-The detector does **not** implement these action permissions.
-
-Suggested future interface only:
-
-```python
-def authorize_action(action_name: str, context: dict) -> ActionDecision:
-    ...
-```
-
-### Dataset/replay placeholder
-
-The formal evaluator should call the shared detector interfaces rather than
-copying detector logic.
-
-Suggested use:
-
-```text
-configuration 1 -> no_screening_detector
-configuration 2 -> original_detector
-configuration 3 -> full_detector + team's output/action checks
-```
-
-Important: the current scientific 650-case JSONL in the repository does not
-match the university-email dataset described in the project proposal. Do not
-silently use it as the final proposal evaluation set.
-
-### Review UI placeholder
-
-The future review screen should consume `ProcessingResult` and display:
-
-- original email
-- verdict
-- reason/evidence
-- generated draft only when drafting was permitted
-
-The detection branch does not implement the UI.
-
-## Rule for future integration
-
-Do not duplicate prompt-injection rules in other modules. Call
-`full_detector(message)` and use the returned `ScreeningDecision`.
-
-If a shared input/output shape must change, agree on the change before editing
-`models.py`, `pipeline.py`, or teammate-owned modules.
+Future TRU-grounded knowledge retrieval should be added as a drafting knowledge
+source after these controls, not as a replacement for the detector, output
+validator, or action authorizer.

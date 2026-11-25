@@ -1,6 +1,6 @@
-
 import sqlite3
 import json
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -12,7 +12,6 @@ DB_PATH = BASE_DIR / "security_audit.db"
 
 def get_connection():
     """Create and return a connection to the SQLite database."""
-
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     connection = sqlite3.connect(DB_PATH)
@@ -21,12 +20,29 @@ def get_connection():
     return connection
 
 
-def initialize_db():
-    """
-    Create all required database tables if they do not exist.
-    """
+@contextmanager
+def _connection_scope():
+    """Yield a SQLite connection and always close it afterward.
 
-    with get_connection() as conn:
+    sqlite3.Connection's own context manager commits or rolls back a
+    transaction, but it does not close the connection. Explicitly closing it
+    is especially important on Windows, where an open SQLite handle can keep
+    the database file locked.
+    """
+    connection = get_connection()
+    try:
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def initialize_db():
+    """Create all required database tables if they do not exist."""
+    with _connection_scope() as conn:
 
         # Table 1: Security verdicts
         conn.execute("""
@@ -63,18 +79,15 @@ def initialize_db():
             )
         """)
 
-        conn.commit()
-
 
 def log_verdict(email_id, verdict, evidence=None, reason=None):
     """Store a security verdict and its supporting evidence."""
-
     timestamp = datetime.now(timezone.utc).isoformat()
 
     if not isinstance(evidence, str):
         evidence = json.dumps(evidence) if evidence is not None else None
 
-    with get_connection() as conn:
+    with _connection_scope() as conn:
         cursor = conn.execute("""
             INSERT INTO verdicts
             (email_id, verdict, evidence, reason, timestamp)
@@ -86,10 +99,9 @@ def log_verdict(email_id, verdict, evidence=None, reason=None):
 
 def log_action_request(action_type, target, approved, reason=None):
     """Store a mock action request and whether it was approved."""
-
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    with get_connection() as conn:
+    with _connection_scope() as conn:
         cursor = conn.execute("""
             INSERT INTO action_requests
             (action_type, target, approved, reason, timestamp)
@@ -101,13 +113,12 @@ def log_action_request(action_type, target, approved, reason=None):
 
 def log_test_result(test_name, status, details=None):
     """Store the result of a project test."""
-
     timestamp = datetime.now(timezone.utc).isoformat()
 
     if not isinstance(details, str):
         details = json.dumps(details) if details is not None else None
 
-    with get_connection() as conn:
+    with _connection_scope() as conn:
         cursor = conn.execute("""
             INSERT INTO test_results
             (test_name, status, details, timestamp)
@@ -119,8 +130,7 @@ def log_test_result(test_name, status, details=None):
 
 def get_verdicts():
     """Retrieve all recorded security verdicts."""
-
-    with get_connection() as conn:
+    with _connection_scope() as conn:
         rows = conn.execute("""
             SELECT * FROM verdicts
             ORDER BY id DESC
@@ -131,8 +141,7 @@ def get_verdicts():
 
 def get_action_requests():
     """Retrieve all recorded mock action requests."""
-
-    with get_connection() as conn:
+    with _connection_scope() as conn:
         rows = conn.execute("""
             SELECT * FROM action_requests
             ORDER BY id DESC
@@ -143,8 +152,7 @@ def get_action_requests():
 
 def get_test_results():
     """Retrieve all recorded test results."""
-
-    with get_connection() as conn:
+    with _connection_scope() as conn:
         rows = conn.execute("""
             SELECT * FROM test_results
             ORDER BY id DESC
@@ -155,8 +163,7 @@ def get_test_results():
 
 def get_database_summary():
     """Return the total number of records in each table."""
-
-    with get_connection() as conn:
+    with _connection_scope() as conn:
 
         verdict_count = conn.execute(
             "SELECT COUNT(*) FROM verdicts"
@@ -175,4 +182,3 @@ def get_database_summary():
             "total_action_requests": action_count,
             "total_test_results": test_count
         }
-
