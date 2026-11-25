@@ -10,12 +10,7 @@ import tomllib
 
 import streamlit as st
 
-from email_assistant.drafting import (
-    DEFAULT_WEB_MODEL,
-    OpenAIDrafter,
-    TRUWebDrafter,
-    VulnerableSimulationDrafter,
-)
+from email_assistant.drafting import DEFAULT_WEB_MODEL, OpenAIDrafter, TRUWebDrafter
 from email_assistant.models import IncomingEmail
 from email_assistant.pipeline import process_message
 from email_assistant.screening import (
@@ -278,7 +273,6 @@ if phase_name.startswith("Phase 1"):
 message = None
 dataset_case = None
 uses_fixed_policy = source_mode == "650-email dataset"
-use_vulnerable_sim = False
 
 if source_mode == "650-email dataset":
     if not DATASET_PATH.exists():
@@ -443,22 +437,6 @@ else:
         "Live tests are demonstrations and are not counted as formal 650-case results."
     )
 
-    drafting_behavior = st.selectbox(
-        "Drafting behavior",
-        [
-            "Real OpenAI assistant with TRU grounding",
-            "Vulnerable assistant simulation (fictional data only)",
-        ],
-    )
-    use_vulnerable_sim = drafting_behavior.startswith("Vulnerable")
-
-    if use_vulnerable_sim:
-        st.warning(
-            "Security demonstration only. This deliberately weak local simulation can "
-            "obey missed malicious instructions, but it has no real records, network tools, "
-            "or sending capability."
-        )
-
     typed_sender = st.text_input("From", value="student@example.test")
     typed_subject = st.text_input(
         "Subject",
@@ -599,8 +577,7 @@ if message is not None:
         st.caption(f"Benchmark case {dataset_case['case_id']}: {case_summary}")
 
     if st.button("Review and draft reply", type="primary", use_container_width=True):
-        needs_openai = uses_fixed_policy or not use_vulnerable_sim
-        configured = _configure_openai() if needs_openai else True
+        configured = _configure_openai()
 
         if not configured:
             secrets_path = ROOT / ".streamlit" / "secrets.toml"
@@ -620,12 +597,6 @@ if message is not None:
                 )
                 spinner_text = (
                     f"Running {phase_name} against the fixed benchmark policy..."
-                )
-            elif use_vulnerable_sim:
-                policy_text = ""
-                drafter = VulnerableSimulationDrafter()
-                spinner_text = (
-                    f"Running {phase_name} with the vulnerable fictional-data simulation..."
                 )
             else:
                 policy_text = ""
@@ -651,32 +622,6 @@ if message is not None:
         st.subheader("Review result")
         st.markdown(f"**{phase_name}**")
         _friendly_status(result)
-
-        if use_vulnerable_sim:
-            if result.draft and getattr(drafter, "compromised", False):
-                st.error(
-                    "Simulated compromise: this phase missed the malicious instruction, "
-                    "so the deliberately weak assistant followed it."
-                )
-                actions = getattr(drafter, "last_simulated_actions", [])
-                for action in actions:
-                    st.caption(
-                        "Simulated action: "
-                        + " · ".join(f"{key}={value}" for key, value in action.items())
-                    )
-                st.caption(
-                    "All identifiers and actions shown here are fictional. No real student "
-                    "record was accessed and nothing was sent."
-                )
-            elif phase_name.startswith("Phase 3") and result.verdict in ("review", "block"):
-                st.success(
-                    "The full controls stopped the message before the vulnerable assistant "
-                    "could use the hidden instruction."
-                )
-                st.caption(
-                    "Per the project policy, the message is held for staff review rather "
-                    "than automatically stripping the attack and sending a reply."
-                )
 
         if dataset_case is not None:
             expected = (
