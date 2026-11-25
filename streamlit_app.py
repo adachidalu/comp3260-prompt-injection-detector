@@ -25,6 +25,10 @@ from email_assistant.screening import (
     no_screening_detector,
     original_detector,
 )
+from email_assistant.security_controls import (
+    audit_summary,
+    authorize_mock_action,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -35,6 +39,13 @@ DETECTORS = {
     "Full screening (recommended)": full_detector,
     "Original-message rules only (evaluation)": original_detector,
     "No screening (baseline evaluation only)": no_screening_detector,
+}
+
+MOCK_ACTIONS = {
+    "Read approved mock policy": "read_mock_policy",
+    "Read private student record": "read_student_record",
+    "Transfer information externally": "external_transfer",
+    "Send email": "send_email",
 }
 
 
@@ -94,8 +105,8 @@ st.set_page_config(
 
 st.title("🛡️ University Email Security Assistant")
 st.caption(
-    "Synthetic COMP 3260 prototype: inspect an email, apply prompt-injection "
-    "screening, and generate a staff-review draft only when permitted."
+    "Synthetic COMP 3260 prototype: guarded intake, prompt-injection screening, "
+    "controlled drafting, output validation, mock action authorization, and audit logging."
 )
 
 st.info(
@@ -123,7 +134,6 @@ with st.sidebar:
         index=0,
     )
 
-    # Output checking is mandatory in the protected UI.
     output_check = True
     st.caption("Draft-output checks are always enabled in this review interface.")
 
@@ -220,14 +230,15 @@ if message is not None:
                 drafter=drafter,
                 policy_text=policy_text,
                 output_check=output_check,
+                audit=True,
             )
 
         st.subheader("Security result")
 
         if result.verdict == "pass":
-            st.success("PASS — screening allowed this email to reach drafting.")
+            st.success("PASS — all enabled security gates allowed this draft for staff review.")
         elif result.verdict == "review":
-            st.warning("REVIEW — email held for human review; no draft is released.")
+            st.warning("REVIEW — the message or generated draft was held for human review.")
         else:
             st.error("BLOCK — prohibited content detected; drafting is not allowed.")
 
@@ -249,8 +260,66 @@ if message is not None:
                 height=220,
                 disabled=True,
             )
-            st.caption("Prototype draft only. No email has been sent.")
+            st.caption(
+                "Prototype draft only. It passed both the policy-bound output check "
+                "and the private-data output validator. No email has been sent."
+            )
         else:
-            st.info("No draft was generated because this message did not pass screening.")
+            st.info(
+                "No draft was released because the message or generated output "
+                "did not pass the integrated security controls."
+            )
+
+    with st.expander("Mock action authorization demonstration"):
+        st.caption(
+            "These controls demonstrate the separate action-permission layer. "
+            "They never access a real record, transfer data, or send email."
+        )
+        action_label = st.selectbox("Mock action", list(MOCK_ACTIONS))
+        target = st.text_input(
+            "Synthetic target",
+            value="demo-target",
+            help="Used only in the local audit log.",
+        )
+
+        if st.button("Authorize mock action"):
+            request = {
+                "action_type": MOCK_ACTIONS[action_label],
+                "target": target,
+            }
+            decision = authorize_mock_action(request, audit=True)
+
+            if decision.get("allowed"):
+                st.success(f"ALLOWED — {decision.get('reason', '')}")
+            else:
+                st.error(f"DENIED — {decision.get('reason', '')}")
+
+            st.json(
+                {
+                    "action_type": decision.get("action_type"),
+                    "allowed": decision.get("allowed"),
+                    "reason": decision.get("reason"),
+                    "audit_logged": decision.get("audit_logged"),
+                }
+            )
+            if decision.get("audit_error"):
+                st.warning(
+                    "The authorization decision was enforced, but audit logging "
+                    f"failed with {decision['audit_error']}."
+                )
+
+    with st.expander("Local security audit summary"):
+        try:
+            summary = audit_summary()
+        except Exception as exc:
+            st.warning(f"Audit database unavailable: {type(exc).__name__}")
+        else:
+            a1, a2, a3 = st.columns(3)
+            a1.metric("Verdicts logged", summary["total_verdicts"])
+            a2.metric("Actions logged", summary["total_action_requests"])
+            a3.metric("Test results logged", summary["total_test_results"])
+            st.caption(
+                "Stored locally in security_audit.db. The repository ignores *.db files."
+            )
 else:
     st.caption("Select or upload a synthetic email to begin.")
