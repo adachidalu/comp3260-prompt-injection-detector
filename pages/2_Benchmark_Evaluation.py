@@ -10,7 +10,7 @@ import tomllib
 import pandas as pd
 import streamlit as st
 
-from email_assistant.drafting import DEFAULT_WEB_MODEL, MockDrafter, OpenAIDrafter
+from email_assistant.drafting import DEFAULT_WEB_MODEL, OpenAIDrafter
 from email_assistant.models import IncomingEmail
 from email_assistant.pipeline import process_message
 from email_assistant.screening import (
@@ -253,24 +253,20 @@ def _balanced_sample(rows: list[dict], sample_size: int) -> list[dict]:
     )
 
 
-def _build_drafter(provider: str):
-    if provider == "OpenAI fixed-policy model":
-        if not _configure_openai():
-            raise RuntimeError("OpenAI API key is not configured")
+def _build_drafter():
+    if not _configure_openai():
+        raise RuntimeError("OpenAI API key is not configured")
 
-        model = os.getenv("OPENAI_MODEL") or DEFAULT_WEB_MODEL
-        return OpenAIDrafter(model=model)
-
-    return MockDrafter()
+    model = os.getenv("OPENAI_MODEL") or DEFAULT_WEB_MODEL
+    return OpenAIDrafter(model=model)
 
 
 def _run_sample_batch(
     batch_rows: list[dict],
-    provider: str,
 ) -> list[dict]:
-    """Run one small batch through all three phases."""
+    """Run one small OpenAI batch through all three phases."""
     policy = _policy_text()
-    drafter = _build_drafter(provider)
+    drafter = _build_drafter()
     records: list[dict] = []
 
     total_runs = len(batch_rows) * len(PHASES)
@@ -574,20 +570,14 @@ if screening_df is not None:
     )
 
 st.divider()
-st.subheader("2. Sampled end-to-end replay")
+st.subheader("2. Sampled end-to-end OpenAI replay")
 st.write(
-    "For model/API testing, use a smaller fixed subset instead of sending all "
+    "For real model/API testing, use a smaller fixed subset instead of sending all "
     "650 emails through all three phases."
 )
 st.caption(
     "The sample is deterministic and balanced across genuine mail, plain attacks, "
     "hidden HTML, Base64, invisible-character attacks, and Unicode look-alikes."
-)
-
-provider = st.selectbox(
-    "Drafting provider",
-    ["OpenAI fixed-policy model", "Offline mock — no API cost"],
-    key="sampled_provider",
 )
 
 sample_size = st.selectbox(
@@ -632,19 +622,16 @@ with st.expander("Preview the fixed sample"):
         hide_index=True,
     )
 
-if provider == "OpenAI fixed-policy model":
-    st.warning(
-        f"A {sample_size}-email replay contains at most "
-        f"{sample_size * 3} phase/case runs. Some attacks are stopped "
-        "before drafting, so the actual number of API calls can be lower."
-    )
+st.warning(
+    f"A {sample_size}-email replay contains at most "
+    f"{sample_size * 3} phase/case runs. Some attacks are stopped "
+    "before drafting, so the actual number of API calls can be lower."
+)
 
-    confirm_paid = st.checkbox(
-        "I understand that OpenAI batches can consume API credits.",
-        key="sampled_paid_confirm",
-    )
-else:
-    confirm_paid = True
+confirm_paid = st.checkbox(
+    "I understand that OpenAI batches can consume API credits.",
+    key="sampled_paid_confirm",
+)
 
 run_state = st.session_state.get("sampled_replay_state")
 
@@ -655,7 +642,7 @@ if st.button(
     use_container_width=True,
 ):
     st.session_state["sampled_replay_state"] = {
-        "provider": provider,
+        "provider": "OpenAI fixed-policy model",
         "sample_size": sample_size,
         "sample_ids": [
             row["case_id"]
@@ -772,7 +759,6 @@ if run_state is not None:
         try:
             new_records = _run_sample_batch(
                 batch_rows,
-                run_state["provider"],
             )
 
             run_state["results"].extend(
