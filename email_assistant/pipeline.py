@@ -29,8 +29,18 @@ SENT_PATTERN = re.compile(
 )
 
 
-def check_draft(draft: str, policy_text: str = '') -> tuple[bool, str]:
-    """Conservative policy-bound output check."""
+def check_draft(
+    draft: str,
+    policy_text: str = "",
+    *,
+    enforce_policy_facts: bool = True,
+) -> tuple[bool, str]:
+    """Conservative output check.
+
+    Fixed-policy evaluation additionally requires dates, links, and addresses
+    to appear in the approved policy. Live TRU-web drafting instead relies on
+    required domain-restricted retrieval and source verification.
+    """
     if not isinstance(draft, str) or not draft.strip():
         return False, 'AI draft is empty or invalid'
     if len(draft) > 5000:
@@ -39,10 +49,11 @@ def check_draft(draft: str, policy_text: str = '') -> tuple[bool, str]:
         return False, 'AI draft includes a synthetic private identifier'
     if SENT_PATTERN.search(draft):
         return False, 'AI draft incorrectly claims mail was sent'
-    if any(x not in policy_text for x in DATE_PATTERN.findall(draft)):
-        return False, 'AI draft mentions a date absent from approved policy'
-    if any(x.rstrip('.,;:') not in policy_text for x in LINK_PATTERN.findall(draft)):
-        return False, 'AI draft includes an unapproved address or URL'
+    if enforce_policy_facts:
+        if any(x not in policy_text for x in DATE_PATTERN.findall(draft)):
+            return False, 'AI draft mentions a date absent from approved policy'
+        if any(x.rstrip('.,;:') not in policy_text for x in LINK_PATTERN.findall(draft)):
+            return False, 'AI draft includes an unapproved address or URL'
     return True, ''
 
 
@@ -108,12 +119,15 @@ def process_message(
                 audit=audit,
             )
 
-        if not isinstance(policy_text, str) or not policy_text.strip():
+        requires_policy_text = bool(getattr(drafter, "requires_policy_text", True))
+        if requires_policy_text and (
+            not isinstance(policy_text, str) or not policy_text.strip()
+        ):
             return _result(
                 source_id,
                 subject,
                 'review',
-                'Approved mock policy is missing',
+                'Approved policy is missing',
                 provider=provider,
                 audit=audit,
             )
@@ -158,7 +172,13 @@ def process_message(
         draft = drafter.generate(message, policy_text)
 
         if output_check:
-            good, issue = check_draft(draft, policy_text)
+            good, issue = check_draft(
+                draft,
+                policy_text,
+                enforce_policy_facts=bool(
+                    getattr(drafter, "enforce_policy_facts", True)
+                ),
+            )
             if not good:
                 return _result(
                     source_id,
