@@ -104,6 +104,14 @@ st.info(
     "real student records, or connect to a real university mailbox."
 )
 
+st.page_link(
+    "pages/1_Live_TRU_Drafting.py",
+    label="Open protected live TRU AI drafting test",
+    icon="🌐",
+)
+st.caption("Live TRU drafting uses official website search and a separately configured API key. "
+           "The synthetic 650-email benchmark continues to use its frozen mock policy.")
+
 st.divider()
 workflow = st.radio(
     "Workflow",
