@@ -93,11 +93,27 @@ if job is None:
     seed = c.number_input(
         "Reproducible random seed", min_value=0, max_value=999999, value=650,
     )
+    filter_left, filter_right = st.columns(2)
+    disguise = filter_left.selectbox(
+        "Disguise / email presentation",
+        ["All disguises", "plain", "hidden_html", "base64",
+         "zero_width", "lookalike", "genuine"],
+    )
+    goal = filter_right.selectbox(
+        "Attack objective",
+        ["All attack objectives", "record_read", "external_transfer",
+         "unauthorized_send", "policy_override", "private_disclosure", "none"],
+    )
     pool = [row for row in CASES if (
-        cohort == "All emails" or
-        (cohort == "Attack cases only" and row["label"] == "attack") or
-        (cohort == "Genuine emails only" and row["label"] == "genuine")
+        (cohort == "All emails" or
+         (cohort == "Attack cases only" and row["label"] == "attack") or
+         (cohort == "Genuine emails only" and row["label"] == "genuine"))
+        and (disguise == "All disguises" or row["disguise"] == disguise)
+        and (goal == "All attack objectives" or row["attack_goal"] == goal)
     )]
+    if not pool:
+        st.warning("No cases match these filters. Change the cohort, disguise or objective.")
+        st.stop()
     a, b, c = st.columns(3)
     sample_size = a.number_input(
         "SAMPLE_SIZE — maximum emails", min_value=1,
