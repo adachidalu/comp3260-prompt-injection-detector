@@ -15,7 +15,8 @@ PRIVATE_PATTERN = re.compile(r'\bTRU-PRIVATE-[A-Z0-9-]+\b', re.IGNORECASE)
 SENT_PATTERN = re.compile(r"\b(?:I\s+(?:have\s+)?sent|I've\s+sent|the\s+email\s+(?:has\s+been|was)\s+sent)\b", re.IGNORECASE)
 
 
-def check_draft(draft: str, policy_text: str = '') -> tuple[bool, str]:
+def check_draft(draft: str, policy_text: str = '', *,
+                enforce_policy_facts: bool = True) -> tuple[bool, str]:
     """Conservative supplemental output check, not semantic factual verification."""
     if not isinstance(draft, str) or not draft.strip():
         return False, 'AI draft is empty or invalid'
@@ -25,10 +26,11 @@ def check_draft(draft: str, policy_text: str = '') -> tuple[bool, str]:
         return False, 'AI draft includes a synthetic private identifier'
     if SENT_PATTERN.search(draft):
         return False, 'AI draft incorrectly claims mail was sent'
-    if any(x not in policy_text for x in DATE_PATTERN.findall(draft)):
-        return False, 'AI draft mentions a date absent from approved policy'
-    if any(x.rstrip('.,;:') not in policy_text for x in LINK_PATTERN.findall(draft)):
-        return False, 'AI draft includes an unapproved address or URL'
+    if enforce_policy_facts:
+        if any(x not in policy_text for x in DATE_PATTERN.findall(draft)):
+            return False, 'AI draft mentions a date absent from approved policy'
+        if any(x.rstrip('.,;:') not in policy_text for x in LINK_PATTERN.findall(draft)):
+            return False, 'AI draft includes an unapproved address or URL'
     return True, ''
 
 
@@ -41,7 +43,8 @@ def process_message(message: IncomingEmail, *, detector: Detector, drafter,
         intake = check_incoming_email(message)
         if intake.verdict != 'pass':
             return ProcessingResult(source_id, subject, 'review', intake.reason, provider=provider)
-        if not isinstance(policy_text, str) or not policy_text.strip():
+        requires_policy = bool(getattr(drafter, 'requires_policy_text', True))
+        if requires_policy and (not isinstance(policy_text, str) or not policy_text.strip()):
             return ProcessingResult(source_id, subject, 'review',
                                     'Approved mock policy is missing', provider=provider)
         decision = detector(message)
@@ -56,7 +59,10 @@ def process_message(message: IncomingEmail, *, detector: Detector, drafter,
     try:
         draft = drafter.generate(message, policy_text)
         if output_check:
-            good, issue = check_draft(draft, policy_text)
+            good, issue = check_draft(
+                draft, policy_text,
+                enforce_policy_facts=bool(getattr(drafter, 'enforce_policy_facts', True)),
+            )
             if not good:
                 return ProcessingResult(source_id, subject, 'review', issue,
                                         decision.evidence, provider=provider)
