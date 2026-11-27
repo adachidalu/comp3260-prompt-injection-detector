@@ -75,7 +75,11 @@ Every selected email is evaluated under every chosen condition. For example,
 gives 15 unique emails × 3 conditions = **45 case-condition evaluations**.
 
 A fixed random seed provides reproducible sampling. The sample may be
-filtered to genuine or attack cases. Related attack variants are correlated;
+filtered by genuine/attack status, disguise, and attack objective. For a
+predictable offline demo of mock tool requests, filter to **Attack cases only**,
+**plain**, and **record_read** before selecting a small sample. This deliberately
+selects familiar examples for demonstration, not a representative score.
+Related attack variants are correlated;
 this preview is **not** a representative final-sample estimate.
 
 The runner executes one case-condition at a time and automatically updates
