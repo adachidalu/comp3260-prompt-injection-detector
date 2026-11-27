@@ -23,7 +23,8 @@ def _configure_secret_settings() -> bool:
     for name in ("OPENAI_API_KEY", "OPENAI_MODEL"):
         try:
             value = st.secrets.get(name)
-        except (OSError, KeyError, AttributeError, FileNotFoundError):
+        except Exception:
+            # Streamlit raises a custom exception if the local secrets file is absent.
             value = None
         if value:
             os.environ[name] = str(value).strip()
