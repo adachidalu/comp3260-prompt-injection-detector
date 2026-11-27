@@ -109,6 +109,11 @@ st.page_link(
     label="Open protected live TRU AI drafting test",
     icon="🌐",
 )
+st.page_link(
+    "pages/3_Mock_Permission_Sandbox.py",
+    label="Open real-model mock permission sandbox (adjustable batches)",
+    icon="🧪",
+)
 st.caption("Live TRU drafting uses official website search and a separately configured API key. "
            "The synthetic 650-email benchmark continues to use its frozen mock policy.")
 
