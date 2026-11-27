@@ -187,10 +187,13 @@ def _workstation():
     st.progress(
         done / total, text=f"{done}/{total} completed condition/case evaluations",
     )
+    cases_processed = done // max(1, len(job["modes"]))
+    completed_batches = cases_processed // max(1, job["batch_size"])
     st.caption(
         f"Status: **{job['status'].upper()}** · "
         f"Selected sample: {job['sample_size']} emails · "
-        f"Batch size: {job['batch_size']} emails"
+        f"Batch size: {job['batch_size']} emails · "
+        f"Fully completed batches: {completed_batches}"
     )
 
     a, b, c = st.columns(3)
